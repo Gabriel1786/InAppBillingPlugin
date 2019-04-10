@@ -262,9 +262,13 @@ namespace Plugin.InAppBilling
                     purchase = await PurchaseAsync(productId, ITEM_TYPE_INAPP, payload, verifyPurchase);
                     break;
                 case ItemType.Subscription:
-                    purchase = await PurchaseAsync(productId, ITEM_TYPE_SUBSCRIPTION, payload, verifyPurchase);
-                    break;
-            }
+					var activeSubscriptions = await GetPurchasesAsync(itemType, verifyPurchase);
+					var oldSubscriptions = activeSubscriptions.Select(p => p.ProductId).ToList();
+					oldSubscriptions.Remove(productId);
+
+					purchase = await PurchaseAsync(productId, ITEM_TYPE_SUBSCRIPTION, payload, verifyPurchase, new JavaList<string>(oldSubscriptions));
+					break;
+			}
 
             if (purchase == null)
                 return null;
@@ -284,14 +288,23 @@ namespace Plugin.InAppBilling
             };
         }
 
-        async Task<Purchase> PurchaseAsync(string productSku, string itemType, string payload, IInAppBillingVerifyPurchase verifyPurchase)
+        async Task<Purchase> PurchaseAsync(string productSku, string itemType, string payload, IInAppBillingVerifyPurchase verifyPurchase, JavaList<string> oldSkus = null)
         {
             lock (purchaseLocker)
             {
                 if (tcsPurchase != null && !tcsPurchase.Task.IsCompleted)
                     return null;
 
-                Bundle buyIntentBundle = serviceConnection.Service.GetBuyIntent(3, Context.PackageName, productSku, itemType, payload);
+				Bundle buyIntentBundle = null;
+
+				if (oldSkus == null)
+				{
+					buyIntentBundle = serviceConnection.Service.GetBuyIntent(3, Context.PackageName, productSku, itemType, payload);
+				}
+				else
+				{
+					buyIntentBundle = serviceConnection.Service.GetBuyIntentToReplaceSkus(5, Context.PackageName, oldSkus, productSku, itemType, payload);
+				}
                 var response = GetResponseCodeFromBundle(buyIntentBundle);
 
                 switch (response)
